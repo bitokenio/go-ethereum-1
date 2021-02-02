@@ -17,6 +17,7 @@
 package eth
 
 import (
+	"github.com/ethereum/go-ethereum/consensus/istanbul"
 	"math/big"
 	"os"
 	"os/user"
@@ -168,6 +169,9 @@ type Config struct {
 	// Enables tracking of SHA3 preimages in the VM
 	EnablePreimageRecording bool
 
+	// Istanbul options
+	Istanbul istanbul.Config
+
 	// Miscellaneous options
 	DocRoot string `toml:"-"`
 
@@ -189,4 +193,7 @@ type Config struct {
 
 	// CheckpointOracle is the configuration for checkpoint oracle.
 	CheckpointOracle *params.CheckpointOracleConfig `toml:",omitempty"`
+
+	// Istanbul block override (TODO: remove after the fork)
+	OverrideIstanbul *big.Int
 }

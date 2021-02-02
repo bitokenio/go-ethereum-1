@@ -162,6 +162,10 @@ var (
 		utils.EWASMInterpreterFlag,
 		utils.EVMInterpreterFlag,
 		configFileFlag,
+		//Quorum
+		utils.IstanbulRequestTimeoutFlag,
+		utils.IstanbulBlockPeriodFlag,
+		// End-Quorum
 	}
 
 	rpcFlags = []cli.Flag{

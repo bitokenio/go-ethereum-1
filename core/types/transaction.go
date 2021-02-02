@@ -36,6 +36,18 @@ var (
 	ErrInvalidSig = errors.New("invalid transaction v, r, s values")
 )
 
+// deriveSigner makes a *best* guess about which signer to use.
+func deriveSigner(V *big.Int) Signer {
+	// joel: this is one of the two places we used a wrong signer to print txes
+	if V.Sign() != 0 && isProtectedV(V) {
+		return NewEIP155Signer(deriveChainId(V))
+	} else if isPrivate(V) {
+		return QuorumPrivateTxSigner{}
+	} else {
+		return HomesteadSigner{}
+	}
+}
+
 type Transaction struct {
 	data txdata    // Consensus contents of a transaction
 	time time.Time // Time first seen locally (spam avoidance)
@@ -199,6 +211,14 @@ func (tx *Transaction) To() *common.Address {
 	}
 	to := *tx.data.Recipient
 	return &to
+}
+
+func (tx *Transaction) From() common.Address {
+	signer := deriveSigner(tx.data.V)
+	if from, err := Sender(signer, tx); err == nil {
+		return from
+	}
+	return common.Address{}
 }
 
 // Hash hashes the RLP encoding of tx.
@@ -417,6 +437,7 @@ type Message struct {
 	gasPrice   *big.Int
 	data       []byte
 	checkNonce bool
+	isPrivate  bool
 }
 
 func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte, checkNonce bool) Message {
@@ -440,3 +461,33 @@ func (m Message) Gas() uint64          { return m.gasLimit }
 func (m Message) Nonce() uint64        { return m.nonce }
 func (m Message) Data() []byte         { return m.data }
 func (m Message) CheckNonce() bool     { return m.checkNonce }
+
+func (m Message) IsPrivate() bool {
+	return m.isPrivate
+}
+
+func (tx *Transaction) IsPrivate() bool {
+	if tx.data.V == nil {
+		return false
+	}
+	return tx.data.V.Uint64() == 37 || tx.data.V.Uint64() == 38
+}
+
+/*
+ * Indicates that a transaction is private, but doesn't necessarily set the correct v value, as it can be called on
+ * an unsigned transaction.
+ * pre homestead signer, all v values were v=27 or v=28, with EIP155Signer that change,
+ * but SetPrivate() is also used on unsigned transactions to temporarily set the v value to indicate
+ * the transaction is intended to be private, and so that the correct signer can be selected. The signer will correctly
+ * set the valid v value (37 or 38): This helps minimize changes vs upstream go-ethereum code.
+ */
+func (tx *Transaction) SetPrivate() {
+	if tx.IsPrivate() {
+		return
+	}
+	if tx.data.V.Int64() == 28 {
+		tx.data.V.SetUint64(38)
+	} else {
+		tx.data.V.SetUint64(37)
+	}
+}
