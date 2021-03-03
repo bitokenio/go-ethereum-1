@@ -423,7 +423,7 @@ func (rw *protoRW) WriteMsg(msg Msg) (err error) {
 	if msg.Code >= rw.Length {
 		return newPeerError(errInvalidMsgCode, "not handled")
 	}
-	msg.meterCap = rw.cap()
+	msg.meterCap = rw.Cap()
 	msg.meterCode = msg.Code
 
 	msg.Code += rw.offset

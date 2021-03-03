@@ -20,6 +20,8 @@ package utils
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	istanbulBackend "github.com/ethereum/go-ethereum/consensus/istanbul/backend"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -224,6 +226,10 @@ var (
 	WhitelistFlag = cli.StringFlag{
 		Name:  "whitelist",
 		Usage: "Comma separated block number-to-hash mappings to enforce (<number>=<hash>)",
+	}
+	OverrideIstanbulFlag = cli.Uint64Flag{
+		Name:  "override.istanbul",
+		Usage: "Manually specify Istanbul fork-block, overriding the bundled setting",
 	}
 	// Light server and client settings
 	LightServeFlag = cli.IntFlag{
@@ -1882,6 +1888,15 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readOnly bool) (chain *core.B
 	var engine consensus.Engine
 	if config.Clique != nil {
 		engine = clique.New(config.Clique, chainDb)
+	} else if config.Istanbul != nil {
+		// for IBFT
+		istanbulConfig := istanbul.DefaultConfig
+		if config.Istanbul.Epoch != 0 {
+			istanbulConfig.Epoch = config.Istanbul.Epoch
+		}
+		istanbulConfig.ProposerPolicy = istanbul.ProposerPolicy(config.Istanbul.ProposerPolicy)
+		istanbulConfig.Ceil2Nby3Block = config.Istanbul.Ceil2Nby3Block
+		engine = istanbulBackend.New(istanbulConfig, stack.GetNodeKey(), chainDb)
 	} else {
 		engine = ethash.NewFaker()
 		if !ctx.GlobalBool(FakePoWFlag.Name) {

@@ -63,7 +63,7 @@ type Protocol struct {
 	Attributes []enr.Entry
 }
 
-func (p Protocol) cap() Cap {
+func (p Protocol) Cap() Cap {
 	return Cap{p.Name, p.Version}
 }
 

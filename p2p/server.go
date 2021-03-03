@@ -494,7 +494,7 @@ func (srv *Server) setupLocalNode() error {
 	pubkey := crypto.FromECDSAPub(&srv.PrivateKey.PublicKey)
 	srv.ourHandshake = &protoHandshake{Version: baseProtocolVersion, Name: srv.Name, ID: pubkey[1:]}
 	for _, p := range srv.Protocols {
-		srv.ourHandshake.Caps = append(srv.ourHandshake.Caps, p.cap())
+		srv.ourHandshake.Caps = append(srv.ourHandshake.Caps, p.Cap())
 	}
 	sort.Sort(capsByNameAndVersion(srv.ourHandshake.Caps))
 

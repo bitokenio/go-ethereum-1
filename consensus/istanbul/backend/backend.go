@@ -18,6 +18,7 @@ package backend
 
 import (
 	"crypto/ecdsa"
+	"github.com/ethereum/go-ethereum/trie"
 	"math/big"
 	"sync"
 	"time"
@@ -75,7 +76,7 @@ type backend struct {
 	core             istanbulCore.Engine
 	logger           log.Logger
 	db               ethdb.Database
-	chain            consensus.ChainReader
+	chain            consensus.ChainHeaderReader
 	currentBlock     func() *types.Block
 	hasBadBlock      func(hash common.Hash) bool
 
@@ -101,7 +102,7 @@ type backend struct {
 }
 
 // zekun: HACK
-func (sb *backend) CalcDifficulty(chain consensus.ChainReader, time uint64, parent *types.Header) *big.Int {
+func (sb *backend) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
 	return new(big.Int)
 }
 
@@ -220,7 +221,7 @@ func (sb *backend) Verify(proposal istanbul.Proposal) (time.Duration, error) {
 	}
 
 	// check block body
-	txnHash := types.DeriveSha(block.Transactions())
+	txnHash := types.DeriveSha(block.Transactions(), new(trie.Trie))
 	uncleHash := types.CalcUncleHash(block.Uncles())
 	if txnHash != block.Header().TxHash {
 		return 0, errMismatchTxhashes

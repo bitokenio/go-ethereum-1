@@ -19,10 +19,12 @@ package core
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // Start implements core.Engine.Start
 func (c *core) Start() error {
+	log.Debug("Starting Istanbul Engine...")
 	// Start a new round from last sequence + 1
 	c.startNewRound(common.Big0)
 
@@ -36,6 +38,7 @@ func (c *core) Start() error {
 
 // Stop implements core.Engine.Stop
 func (c *core) Stop() error {
+	log.Debug("Stopping Istanbul Engine...")
 	c.stopTimer()
 	c.unsubscribeEvents()
 
@@ -82,11 +85,13 @@ func (c *core) handleEvents() {
 		select {
 		case event, ok := <-c.events.Chan():
 			if !ok {
+				log.Error("[Istanbul Quorum] Event Error!", "event", event, "ok", ok)
 				return
 			}
 			// A real event arrived, process interesting content
 			switch ev := event.Data.(type) {
 			case istanbul.RequestEvent:
+				log.Debug("[Istanbul Quorum] Request Event received")
 				r := &istanbul.Request{
 					Proposal: ev.Proposal,
 				}
@@ -95,10 +100,12 @@ func (c *core) handleEvents() {
 					c.storeRequestMsg(r)
 				}
 			case istanbul.MessageEvent:
+				log.Debug("[Istanbul Quorum] Message Event received")
 				if err := c.handleMsg(ev.Payload); err == nil {
 					c.backend.Gossip(c.valSet, ev.Payload)
 				}
 			case backlogEvent:
+				log.Debug("[Istanbul Quorum][INTERNAL] Backlog Event received")
 				// No need to check signature for internal messages
 				if err := c.handleCheckedMsg(ev.msg, ev.src); err == nil {
 					p, err := ev.msg.Payload()
@@ -110,12 +117,16 @@ func (c *core) handleEvents() {
 				}
 			}
 		case _, ok := <-c.timeoutSub.Chan():
+			log.Debug("[Istanbul Quorum] Timeout Event received")
 			if !ok {
+				log.Error("[Istanbul Quorum] Timeout Event Error!", "ok", ok)
 				return
 			}
 			c.handleTimeoutMsg()
 		case event, ok := <-c.finalCommittedSub.Chan():
+			log.Debug("[Istanbul Quorum] Final Commited Event received")
 			if !ok {
+				log.Error("[Istanbul Quorum] Final Commited Event Error!", "event", event, "ok", ok)
 				return
 			}
 			switch event.Data.(type) {
@@ -165,12 +176,16 @@ func (c *core) handleCheckedMsg(msg *message, src istanbul.Validator) error {
 
 	switch msg.Code {
 	case msgPreprepare:
+		logger.Trace("[Istanbul Quorum] PrePepare received.", "msg", msg.Msg)
 		return testBacklog(c.handlePreprepare(msg, src))
 	case msgPrepare:
+		logger.Trace("[Istanbul Quorum] Prepare received.", "msg", msg.Msg)
 		return testBacklog(c.handlePrepare(msg, src))
 	case msgCommit:
+		logger.Trace("[Istanbul Quorum] Commit received.", "msg", msg.Msg)
 		return testBacklog(c.handleCommit(msg, src))
 	case msgRoundChange:
+		logger.Trace("[Istanbul Quorum] RoundChange received.", "msg", msg.Msg)
 		return testBacklog(c.handleRoundChange(msg, src))
 	default:
 		logger.Error("Invalid message", "msg", msg)

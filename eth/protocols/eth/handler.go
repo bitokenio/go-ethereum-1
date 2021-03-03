@@ -19,6 +19,10 @@ package eth
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/crypto"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -70,6 +74,14 @@ type Backend interface {
 	// Chain retrieves the blockchain object to serve data.
 	Chain() *core.BlockChain
 
+	// Quorum
+	// Engine retrieves the consensus engine
+	Engine() consensus.Engine
+
+	// RaftMode retrieves the raft mode for consensus engine
+	RaftMode() bool
+	// Quorum end
+
 	// StateBloom retrieves the bloom filter - if any - for state trie nodes.
 	StateBloom() *trie.SyncBloom
 
@@ -103,14 +115,19 @@ type TxPool interface {
 
 // MakeProtocols constructs the P2P protocol definitions for `eth`.
 func MakeProtocols(backend Backend, network uint64, dnsdisc enode.Iterator) []p2p.Protocol {
-	protocols := make([]p2p.Protocol, len(protocolVersions))
-	for i, version := range protocolVersions {
+	var protocols []p2p.Protocol
+	// Quorum: Set p2p.Protocol info from engine.Protocol()
+	for _, version := range protocolVersions {
 		version := version // Closure
-
-		protocols[i] = p2p.Protocol{
-			Name:    protocolName,
+		length, ok := backend.Engine().Protocol().Lengths[version]
+		if !ok {
+			log.Warn("Protocol version " + fmt.Sprint(version) + " not compatible with Istanbul.")
+			continue
+		}
+		protocols = append(protocols, p2p.Protocol{
+			Name:    backend.Engine().Protocol().Name,
 			Version: version,
-			Length:  protocolLengths[version],
+			Length:  length,
 			Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 				peer := NewPeer(version, p, rw, backend.TxPool())
 				defer peer.Close()
@@ -120,14 +137,22 @@ func MakeProtocols(backend Backend, network uint64, dnsdisc enode.Iterator) []p2
 				})
 			},
 			NodeInfo: func() interface{} {
-				return nodeInfo(backend.Chain(), network)
+				return nodeInfo(backend.Chain(), network, getConsensusAlgorithm(backend.Engine(), backend.RaftMode()))
 			},
 			PeerInfo: func(id enode.ID) interface{} {
 				return backend.PeerInfo(id)
 			},
 			Attributes:     []enr.Entry{currentENREntry(backend.Chain())},
 			DialCandidates: dnsdisc,
-		}
+		})
+	}
+
+	var caps = ""
+	for _, protocol := range protocols {
+		caps += protocol.Cap().String() + " "
+	}
+	if len(protocols) == 0 {
+		panic("Make protocols negotiation failed.")
 	}
 	return protocols
 }
@@ -140,10 +165,11 @@ type NodeInfo struct {
 	Genesis    common.Hash         `json:"genesis"`    // SHA3 hash of the host's genesis block
 	Config     *params.ChainConfig `json:"config"`     // Chain configuration for the fork rules
 	Head       common.Hash         `json:"head"`       // Hex hash of the host's best owned block
+	Consensus  string              `json:"consensus"`  // Consensus mechanism in use
 }
 
 // nodeInfo retrieves some `eth` protocol metadata about the running host node.
-func nodeInfo(chain *core.BlockChain, network uint64) *NodeInfo {
+func nodeInfo(chain *core.BlockChain, network uint64, consensus string) *NodeInfo {
 	head := chain.CurrentBlock()
 	return &NodeInfo{
 		Network:    network,
@@ -151,6 +177,7 @@ func nodeInfo(chain *core.BlockChain, network uint64) *NodeInfo {
 		Genesis:    chain.Genesis().Hash(),
 		Config:     chain.Config(),
 		Head:       head.Hash(),
+		Consensus:  consensus,
 	}
 }
 
@@ -178,6 +205,17 @@ func handleMessage(backend Backend, peer *Peer) error {
 		return fmt.Errorf("%w: %v > %v", errMsgTooLarge, msg.Size, maxMessageSize)
 	}
 	defer msg.Discard()
+
+	// Quorum
+	if handler, ok := backend.Engine().(consensus.Handler); ok {
+		pubKey := peer.Node().Pubkey()
+		addr := crypto.PubkeyToAddress(*pubKey)
+		handled, err := handler.HandleMsg(addr, msg)
+		if handled {
+			return err
+		}
+	}
+	// /Quorum
 
 	// Handle the message depending on its contents
 	switch {
@@ -509,4 +547,24 @@ func handleMessage(backend Backend, peer *Peer) error {
 		return fmt.Errorf("%w: %v", errInvalidMsgCode, msg.Code)
 	}
 	return nil
+}
+
+// Quorum
+func getConsensusAlgorithm(engine consensus.Engine, raftMode bool) string {
+	var consensusAlgo string
+	if raftMode { // raft does not use consensus interface
+		consensusAlgo = "raft"
+	} else {
+		switch engine.(type) {
+		case consensus.Istanbul:
+			consensusAlgo = "istanbul"
+		case *clique.Clique:
+			consensusAlgo = "clique"
+		case *ethash.Ethash:
+			consensusAlgo = "ethash"
+		default:
+			consensusAlgo = "unknown"
+		}
+	}
+	return consensusAlgo
 }

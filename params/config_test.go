@@ -28,6 +28,30 @@ func TestCheckCompatible(t *testing.T) {
 		head        uint64
 		wantErr     *ConfigCompatError
 	}
+
+	var storedMaxCodeConfig0, storedMaxCodeConfig1, storedMaxCodeConfig2 []MaxCodeConfigStruct
+	defaultRec := MaxCodeConfigStruct{big.NewInt(0), 24}
+	rec1 := MaxCodeConfigStruct{big.NewInt(5), 32}
+	rec2 := MaxCodeConfigStruct{big.NewInt(10), 40}
+	rec3 := MaxCodeConfigStruct{big.NewInt(8), 40}
+
+	storedMaxCodeConfig0 = append(storedMaxCodeConfig0, defaultRec)
+
+	storedMaxCodeConfig1 = append(storedMaxCodeConfig1, defaultRec)
+	storedMaxCodeConfig1 = append(storedMaxCodeConfig1, rec1)
+	storedMaxCodeConfig1 = append(storedMaxCodeConfig1, rec2)
+
+	storedMaxCodeConfig2 = append(storedMaxCodeConfig2, rec1)
+	storedMaxCodeConfig2 = append(storedMaxCodeConfig2, rec2)
+
+	var passedValidMaxConfig0 []MaxCodeConfigStruct
+	passedValidMaxConfig0 = append(passedValidMaxConfig0, defaultRec)
+	passedValidMaxConfig0 = append(passedValidMaxConfig0, rec1)
+
+	var passedValidMaxConfig1 []MaxCodeConfigStruct
+	passedValidMaxConfig1 = append(passedValidMaxConfig1, defaultRec)
+	passedValidMaxConfig1 = append(passedValidMaxConfig1, rec1)
+	passedValidMaxConfig1 = append(passedValidMaxConfig1, rec3)
 	tests := []test{
 		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, head: 0, wantErr: nil},
 		{stored: AllEthashProtocolChanges, new: AllEthashProtocolChanges, head: 100, wantErr: nil},
@@ -86,6 +110,92 @@ func TestCheckCompatible(t *testing.T) {
 				NewConfig:    big.NewInt(31),
 				RewindTo:     30,
 			},
+		},
+		{
+			stored: &ChainConfig{MaxCodeSizeChangeBlock: big.NewInt(10)},
+			new:    &ChainConfig{MaxCodeSizeChangeBlock: big.NewInt(20)},
+			head:   30,
+			wantErr: &ConfigCompatError{
+				What:         "max code size change fork block",
+				StoredConfig: big.NewInt(10),
+				NewConfig:    big.NewInt(20),
+				RewindTo:     9,
+			},
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSizeChangeBlock: big.NewInt(10)},
+			new:     &ChainConfig{MaxCodeSizeChangeBlock: big.NewInt(20)},
+			head:    4,
+			wantErr: nil,
+		},
+		{
+			stored: &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig0},
+			new:    &ChainConfig{MaxCodeSizeConfig: nil},
+			head:   4,
+			wantErr: &ConfigCompatError{
+				What:         "genesis file missing max code size information",
+				StoredConfig: big.NewInt(4),
+				NewConfig:    big.NewInt(4),
+				RewindTo:     3,
+			},
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig0},
+			new:     &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig0},
+			head:    4,
+			wantErr: nil,
+		},
+		{
+			stored: &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig0},
+			new:    &ChainConfig{MaxCodeSizeConfig: passedValidMaxConfig0},
+			head:   10,
+			wantErr: &ConfigCompatError{
+				What:         "maxCodeSizeConfig data incompatible. updating maxCodeSize for past",
+				StoredConfig: big.NewInt(10),
+				NewConfig:    big.NewInt(10),
+				RewindTo:     9,
+			},
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig0},
+			new:     &ChainConfig{MaxCodeSizeConfig: passedValidMaxConfig0},
+			head:    4,
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig1},
+			new:     &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig1},
+			head:    12,
+			wantErr: nil,
+		},
+		{
+			stored: &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig1},
+			new:    &ChainConfig{MaxCodeSizeConfig: passedValidMaxConfig1},
+			head:   12,
+			wantErr: &ConfigCompatError{
+				What:         "maxCodeSizeConfig data incompatible. maxCodeSize historical data does not match",
+				StoredConfig: big.NewInt(12),
+				NewConfig:    big.NewInt(12),
+				RewindTo:     11,
+			},
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSize: 32},
+			new:     &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig2},
+			head:    8,
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSize: 32},
+			new:     &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig2},
+			head:    15,
+			wantErr: nil,
+		},
+		{
+			stored:  &ChainConfig{MaxCodeSize: 32, MaxCodeSizeChangeBlock: big.NewInt(10)},
+			new:     &ChainConfig{MaxCodeSizeConfig: storedMaxCodeConfig1},
+			head:    15,
+			wantErr: nil,
 		},
 	}
 

@@ -18,6 +18,7 @@ package main
 
 import (
 	"crypto/rand"
+	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -31,9 +32,40 @@ import (
 )
 
 const (
-	ipcAPIs  = "admin:1.0 debug:1.0 eth:1.0 ethash:1.0 miner:1.0 net:1.0 personal:1.0 rpc:1.0 txpool:1.0 web3:1.0"
+	ipcAPIs  = "admin:1.0 debug:1.0 eth:1.0 istanbul:1.0 ethash:1.0 miner:1.0 net:1.0 personal:1.0 rpc:1.0 txpool:1.0 web3:1.0"
 	httpAPIs = "eth:1.0 net:1.0 rpc:1.0 web3:1.0"
+	nodeKey  = "b68c0338aa4b266bf38ebe84c6199ae9fac8b29f32998b3ed2fbeafebe8d65c9"
 )
+
+var genesis = `{
+    "config": {
+        "chainId": 2017,
+        "homesteadBlock": 1,
+        "eip150Block": 2,
+        "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "eip155Block": 3,
+        "eip158Block": 3,
+        "istanbul": {
+            "epoch": 30000,
+            "policy": 0
+        }
+    },
+    "nonce": "0x0",
+    "timestamp": "0x0",
+    "gasLimit": "0x47b760",
+    "difficulty": "0x1",
+    "mixHash": "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365",
+    "coinbase": "0x8605cdbbdb6d264aa742e77020dcbc58fcdce182",
+    "alloc": {
+        "491937757d1b26e29c507b8d4c0b233c2747e68d": {
+            "balance": "0x446c3b15f9926687d2c40534fdb564000000000000"
+        }
+    },
+    "number": "0x0",
+    "gasUsed": "0x0",
+    "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+}
+`
 
 // spawns geth with the given command line args, using a set of flags to minimise
 // memory and disk IO. If the args don't set --datadir, the
@@ -42,7 +74,7 @@ func runMinimalGeth(t *testing.T, args ...string) *testgeth {
 	// --ropsten to make the 'writing genesis to disk' faster (no accounts)
 	// --networkid=1337 to avoid cache bump
 	// --syncmode=full to avoid allocating fast sync bloom
-	allArgs := []string{"--ropsten", "--networkid", "1337", "--syncmode=full", "--port", "0",
+	allArgs := []string{"--networkid", "1337", "--syncmode=full", "--port", "0",
 		"--nat", "none", "--nodiscover", "--maxpeers", "0", "--cache", "64"}
 	return runGeth(t, append(allArgs, args...)...)
 }
@@ -50,16 +82,22 @@ func runMinimalGeth(t *testing.T, args ...string) *testgeth {
 // Tests that a node embedded within a console can be started up properly and
 // then terminated by closing the input stream.
 func TestConsoleWelcome(t *testing.T) {
+	defer SetResetPrivateConfig("ignore")()
 	coinbase := "0x8605cdbbdb6d264aa742e77020dcbc58fcdce182"
 
+	datadir := setupIstanbul(t)
+	defer os.RemoveAll(datadir)
+
 	// Start a geth console, make sure it's cleaned up and terminate the console
-	geth := runMinimalGeth(t, "--etherbase", coinbase, "console")
+	geth := runMinimalGeth(t, "--etherbase", coinbase, "console", "--datadir", datadir)
 
 	// Gather all the infos the welcome message needs to contain
 	geth.SetTemplateFunc("goos", func() string { return runtime.GOOS })
 	geth.SetTemplateFunc("goarch", func() string { return runtime.GOARCH })
 	geth.SetTemplateFunc("gover", runtime.Version)
 	geth.SetTemplateFunc("gethver", func() string { return params.VersionWithCommit("", "") })
+	geth.SetTemplateFunc("quorumver", func() string { return params.QuorumVersion })
+	geth.SetTemplateFunc("Datadir", func() string { return datadir })
 	geth.SetTemplateFunc("niltime", func() string {
 		return time.Unix(0, 0).Format("Mon Jan 02 2006 15:04:05 GMT-0700 (MST)")
 	})
@@ -83,11 +121,16 @@ To exit, press ctrl-d
 
 // Tests that a console can be attached to a running node via various means.
 func TestAttachWelcome(t *testing.T) {
+	defer SetResetPrivateConfig("ignore")()
 	var (
 		ipc      string
 		httpPort string
 		wsPort   string
 	)
+
+	datadir := setupIstanbul(t)
+	defer os.RemoveAll(datadir)
+
 	// Configure the instance for IPC attachment
 	if runtime.GOOS == "windows" {
 		ipc = `\\.\pipe\geth` + strconv.Itoa(trulyRandInt(100000, 999999))
@@ -103,7 +146,7 @@ func TestAttachWelcome(t *testing.T) {
 	geth := runMinimalGeth(t, "--etherbase", "0x8605cdbbdb6d264aa742e77020dcbc58fcdce182",
 		"--ipcpath", ipc,
 		"--http", "--http.port", httpPort,
-		"--ws", "--ws.port", wsPort)
+		"--ws", "--ws.port", wsPort, "--datadir", datadir)
 	t.Run("ipc", func(t *testing.T) {
 		waitForEndpoint(t, ipc, 3*time.Second)
 		testAttachWelcome(t, geth, "ipc:"+ipc, ipcAPIs)
@@ -131,6 +174,7 @@ func testAttachWelcome(t *testing.T, geth *testgeth, endpoint, apis string) {
 	attach.SetTemplateFunc("goarch", func() string { return runtime.GOARCH })
 	attach.SetTemplateFunc("gover", runtime.Version)
 	attach.SetTemplateFunc("gethver", func() string { return params.VersionWithCommit("", "") })
+	attach.SetTemplateFunc("quorumver", func() string { return params.QuorumVersion })
 	attach.SetTemplateFunc("etherbase", func() string { return geth.Etherbase })
 	attach.SetTemplateFunc("niltime", func() string {
 		return time.Unix(0, 0).Format("Mon Jan 02 2006 15:04:05 GMT-0700 (MST)")
@@ -160,4 +204,35 @@ To exit, press ctrl-d
 func trulyRandInt(lo, hi int) int {
 	num, _ := rand.Int(rand.Reader, big.NewInt(int64(hi-lo)))
 	return int(num.Int64()) + lo
+}
+
+// setupIstanbul creates a temporary directory and copies nodekey and genesis.json.
+// It initializes istanbul by calling geth init
+func setupIstanbul(t *testing.T) string {
+	datadir := tmpdir(t)
+	gethPath := filepath.Join(datadir, "geth")
+	os.Mkdir(gethPath, 0700)
+
+	// Initialize the data directory with the custom genesis block
+	json := filepath.Join(datadir, "genesis.json")
+	if err := ioutil.WriteFile(json, []byte(genesis), 0600); err != nil {
+		t.Fatalf("failed to write genesis file: %v", err)
+	}
+
+	nodeKeyFile := filepath.Join(gethPath, "nodekey")
+	if err := ioutil.WriteFile(nodeKeyFile, []byte(nodeKey), 0600); err != nil {
+		t.Fatalf("failed to write nodekey file: %v", err)
+	}
+
+	runGeth(t, "--datadir", datadir, "init", json).WaitExit()
+
+	return datadir
+}
+
+func SetResetPrivateConfig(value string) func() {
+	existingValue := os.Getenv("PRIVATE_CONFIG")
+	os.Setenv("PRIVATE_CONFIG", value)
+	return func() {
+		os.Setenv("PRIVATE_CONFIG", existingValue)
+	}
 }

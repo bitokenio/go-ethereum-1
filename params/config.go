@@ -252,6 +252,8 @@ var (
 
 	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, new(EthashConfig), nil, nil, false, 32, 32, big.NewInt(0), big.NewInt(0), nil, nil}
 	TestRules       = TestChainConfig.Rules(new(big.Int))
+
+	QuorumTestChainConfig = &ChainConfig{big.NewInt(10), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, new(EthashConfig), nil, nil, true, 64, 32, big.NewInt(0), big.NewInt(0), nil, big.NewInt(0)}
 )
 
 // TrustedCheckpoint represents a set of post-processed trie roots (CHT and
@@ -360,8 +362,9 @@ func (c *EthashConfig) String() string {
 
 // CliqueConfig is the consensus engine configs for proof-of-authority based sealing.
 type CliqueConfig struct {
-	Period uint64 `json:"period"` // Number of seconds between blocks to enforce
-	Epoch  uint64 `json:"epoch"`  // Epoch length to reset votes and checkpoint
+	Period                 uint64 `json:"period"`                 // Number of seconds between blocks to enforce
+	Epoch                  uint64 `json:"epoch"`                  // Epoch length to reset votes and checkpoint
+	AllowedFutureBlockTime uint64 `json:"allowedFutureBlockTime"` // Max time (in seconds) from current time allowed for blocks, before they're considered future blocks
 }
 
 // String implements the stringer interface, returning the consensus engine details.
@@ -419,9 +422,9 @@ func (c *ChainConfig) String() string {
 // Quorum - validate code size and transaction size limit
 func (c *ChainConfig) IsValid() error {
 
-	if c.TransactionSizeLimit < 32 || c.TransactionSizeLimit > 128 {
-		return errors.New("Genesis transaction size limit must be between 32 and 128")
-	}
+	//if c.TransactionSizeLimit < 32 || c.TransactionSizeLimit > 128 {
+	//	return errors.New("Genesis transaction size limit must be between 32 and 128")
+	//}
 
 	if c.MaxCodeSize != 0 && (c.MaxCodeSize < 24 || c.MaxCodeSize > 128) {
 		return errors.New("Genesis max code size must be between 24 and 128")

@@ -17,6 +17,7 @@
 package eth
 
 import (
+	"github.com/ethereum/go-ethereum/consensus"
 	"math"
 	"math/big"
 	"math/rand"
@@ -93,6 +94,8 @@ func (b *testBackend) close() {
 
 func (b *testBackend) Chain() *core.BlockChain     { return b.chain }
 func (b *testBackend) StateBloom() *trie.SyncBloom { return nil }
+func (h *testBackend) RaftMode() bool              { return false }
+func (h *testBackend) Engine() consensus.Engine    { return nil }
 func (b *testBackend) TxPool() TxPool              { return b.txpool }
 
 func (b *testBackend) RunPeer(peer *Peer, handler Handler) error {

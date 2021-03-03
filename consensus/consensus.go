@@ -18,6 +18,7 @@
 package consensus
 
 import (
+	"github.com/ethereum/go-ethereum/p2p"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -123,6 +124,18 @@ type Engine interface {
 
 	// Close terminates any background threads maintained by the consensus engine.
 	Close() error
+}
+
+// Handler should be implemented is the consensus needs to handle and send peer's message
+type Handler interface {
+	// NewChainHead handles a new head block comes
+	NewChainHead() error
+
+	// HandleMsg handles a message from peer
+	HandleMsg(address common.Address, data p2p.Msg) (bool, error)
+
+	// SetBroadcaster sets the broadcaster to send message to peers
+	SetBroadcaster(Broadcaster)
 }
 
 // PoW is a consensus engine based on proof-of-work.

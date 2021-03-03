@@ -47,7 +47,7 @@ func newBlockChain(n int) (*core.BlockChain, *backend) {
 	// Use the first key as private key
 	b, _ := New(config, nodeKeys[0], memDB).(*backend)
 	genesis.MustCommit(memDB)
-	blockchain, err := core.NewBlockChain(memDB, nil, genesis.Config, b, vm.Config{}, nil)
+	blockchain, err := core.NewBlockChain(memDB, nil, genesis.Config, b, vm.Config{}, nil, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -142,7 +142,7 @@ func makeBlock(chain *core.BlockChain, engine *backend, parent *types.Block) *ty
 func makeBlockWithoutSeal(chain *core.BlockChain, engine *backend, parent *types.Block) *types.Block {
 	header := makeHeader(parent, engine.config)
 	engine.Prepare(chain, header)
-	state, _, _ := chain.StateAt(parent.Root())
+	state, _ := chain.StateAt(parent.Root())
 	block, _ := engine.FinalizeAndAssemble(chain, header, state, nil, nil, nil)
 	return block
 }

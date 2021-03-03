@@ -25,6 +25,10 @@ const (
 	VersionMinor = 9          // Minor version component of the current release
 	VersionPatch = 26         // Patch version component of the current release
 	VersionMeta  = "unstable" // Version metadata to append to the version string
+
+	QuorumVersionMajor = 20
+	QuorumVersionMinor = 10
+	QuorumVersionPatch = 0
 )
 
 // Version holds the textual version string.
@@ -39,6 +43,11 @@ var VersionWithMeta = func() string {
 		v += "-" + VersionMeta
 	}
 	return v
+}()
+
+// Version holds the textual version string.
+var QuorumVersion = func() string {
+	return fmt.Sprintf("%d.%d.%d", QuorumVersionMajor, QuorumVersionMinor, QuorumVersionPatch)
 }()
 
 // ArchiveVersion holds the textual version string used for Geth archives.
@@ -63,5 +72,8 @@ func VersionWithCommit(gitCommit, gitDate string) string {
 	if (VersionMeta != "stable") && (gitDate != "") {
 		vsn += "-" + gitDate
 	}
+
+	vsn += "(quorum-v" + QuorumVersion + ")"
+
 	return vsn
 }
