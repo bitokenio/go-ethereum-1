@@ -147,10 +147,6 @@ func MakeProtocols(backend Backend, network uint64, dnsdisc enode.Iterator) []p2
 		})
 	}
 
-	var caps = ""
-	for _, protocol := range protocols {
-		caps += protocol.Cap().String() + " "
-	}
 	if len(protocols) == 0 {
 		panic("Make protocols negotiation failed.")
 	}

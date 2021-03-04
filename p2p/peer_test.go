@@ -96,8 +96,8 @@ func testPeer(protos []Protocol) (func(), *conn, *Peer, <-chan error) {
 	c1 := &conn{fd: fd1, node: newNode(uintID(1), ""), transport: t1}
 	c2 := &conn{fd: fd2, node: newNode(uintID(2), ""), transport: t2}
 	for _, p := range protos {
-		c1.caps = append(c1.caps, p.Cap())
-		c2.caps = append(c2.caps, p.Cap())
+		c1.caps = append(c1.caps, p.cap())
+		c2.caps = append(c2.caps, p.cap())
 	}
 
 	peer := newPeer(log.Root(), c1, protos)

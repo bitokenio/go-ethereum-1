@@ -17,9 +17,7 @@
 package console
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"io"
 	"io/ioutil"
 	"os"
@@ -193,14 +191,6 @@ func (c *Console) initExtensions() error {
 	if err != nil {
 		return fmt.Errorf("api modules: %v", err)
 	}
-	// TESTING
-	log.Debug("GETTING SUPPORTED MODULES")
-	b, err := json.MarshalIndent(apis, "", "  ")
-	if err != nil {
-		log.Debug("error:", err)
-	}
-	log.Debug(string(b))
-	// TESTING
 
 	aliases := map[string]struct{}{"eth": {}, "personal": {}}
 	for api := range apis {

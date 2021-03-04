@@ -422,9 +422,9 @@ func (c *ChainConfig) String() string {
 // Quorum - validate code size and transaction size limit
 func (c *ChainConfig) IsValid() error {
 
-	//if c.TransactionSizeLimit < 32 || c.TransactionSizeLimit > 128 {
-	//	return errors.New("Genesis transaction size limit must be between 32 and 128")
-	//}
+	if c.TransactionSizeLimit < 32 || c.TransactionSizeLimit > 128 {
+		return errors.New("Genesis transaction size limit must be between 32 and 128")
+	}
 
 	if c.MaxCodeSize != 0 && (c.MaxCodeSize < 24 || c.MaxCodeSize > 128) {
 		return errors.New("Genesis max code size must be between 24 and 128")
