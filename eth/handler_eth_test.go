@@ -50,7 +50,7 @@ type testEthHandler struct {
 }
 
 func (h *testEthHandler) Chain() *core.BlockChain              { panic("no backing chain") }
-func (h *testEthHandler) Engine() consensus.Engine             { panic("no backing engine") }
+func (h *testEthHandler) Engine() consensus.Engine             { return h.Engine() }
 func (h *testEthHandler) RaftMode() bool                       { panic("no backing raft mode") }
 func (h *testEthHandler) StateBloom() *trie.SyncBloom          { panic("no backing state bloom") }
 func (h *testEthHandler) TxPool() eth.TxPool                   { panic("no backing tx pool") }

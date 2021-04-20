@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -122,5 +123,30 @@ func waitForEndpoint(t *testing.T, endpoint string, timeout time.Duration) {
 			t.Fatal("endpoint", endpoint, "did not open within", timeout)
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// setupIstanbul creates a temporary directory and copies nodekey and genesis.json.
+// It initializes istanbul by calling geth init
+func setupIstanbul(t *testing.T) string {
+	datadir := tmpdir(t)
+	gethPath := filepath.Join(datadir, "geth")
+	os.Mkdir(gethPath, 0700)
+
+	nodeKeyFile := filepath.Join(gethPath, "nodekey")
+	if err := ioutil.WriteFile(nodeKeyFile, []byte(nodeKey), 0600); err != nil {
+		t.Fatalf("failed to write nodekey file: %v", err)
+	}
+
+	runGeth(t, "--datadir", datadir, "init", "./testdata/istanbul.json").WaitExit()
+
+	return datadir
+}
+
+func SetResetPrivateConfig(value string) func() {
+	existingValue := os.Getenv("PRIVATE_CONFIG")
+	os.Setenv("PRIVATE_CONFIG", value)
+	return func() {
+		os.Setenv("PRIVATE_CONFIG", existingValue)
 	}
 }
