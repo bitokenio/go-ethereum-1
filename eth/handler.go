@@ -18,6 +18,8 @@ package eth
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/crypto"
 	"math"
 	"math/big"
 	"sync"
@@ -85,6 +87,10 @@ type handlerConfig struct {
 	EventMux   *event.TypeMux            // Legacy event mux, deprecate for `feed`
 	Checkpoint *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
 	Whitelist  map[uint64]common.Hash    // Hard coded whitelist for sync challenged
+
+	// Quorum
+	RaftMode bool
+	Engine   consensus.Engine
 }
 
 type handler struct {
@@ -123,6 +129,10 @@ type handler struct {
 	chainSync *chainSyncer
 	wg        sync.WaitGroup
 	peerWG    sync.WaitGroup
+
+	// Quorum
+	raftMode bool
+	engine   consensus.Engine
 }
 
 // newHandler returns a handler for all Ethereum chain management protocol.
@@ -142,7 +152,16 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		whitelist:  config.Whitelist,
 		txsyncCh:   make(chan *txsync),
 		quitSync:   make(chan struct{}),
+		raftMode:   config.RaftMode,
+		engine:     config.Engine,
 	}
+
+	// Quorum
+	if handler, ok := h.engine.(consensus.Handler); ok {
+		handler.SetBroadcaster(h)
+	}
+	// /Quorum
+
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the fast
 		// block is ahead, so fast sync was enabled for this node at a certain point.
@@ -411,6 +430,23 @@ func (h *handler) Stop() {
 	h.peerWG.Wait()
 
 	log.Info("Ethereum protocol stopped")
+}
+
+// Quorum
+func (h *handler) Enqueue(id string, block *types.Block) {
+	h.blockFetcher.Enqueue(id, block)
+}
+
+func (h *handler) FindPeers(targets map[common.Address]bool) map[common.Address]consensus.Peer {
+	m := make(map[common.Address]consensus.Peer)
+	for _, p := range h.peers.ethPeers {
+		pubKey := p.Node().Pubkey()
+		addr := crypto.PubkeyToAddress(*pubKey)
+		if targets[addr] {
+			m[addr] = p
+		}
+	}
+	return m
 }
 
 // BroadcastBlock will either propagate a block to a subset of its peers, or

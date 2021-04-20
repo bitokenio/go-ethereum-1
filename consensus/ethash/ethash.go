@@ -434,8 +434,9 @@ type Ethash struct {
 	fakeFail  uint64        // Block number which fails PoW check even in fake mode
 	fakeDelay time.Duration // Time delay to sleep for before returning from verify
 
-	lock      sync.Mutex // Ensures thread safety for the in-memory caches and mining fields
-	closeOnce sync.Once  // Ensures exit channel will not be closed twice.
+	lock      sync.Mutex      // Ensures thread safety for the in-memory caches and mining fields
+	closeOnce sync.Once       // Ensures exit channel will not be closed twice.
+	exitCh    chan chan error // Notification channel to exiting backend threads
 }
 
 // New creates a full sized ethash PoW scheme and starts a background thread for
@@ -679,4 +680,9 @@ func (ethash *Ethash) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 // dataset.
 func SeedHash(block uint64) []byte {
 	return seedHash(block)
+}
+
+// Protocol implements consensus.Engine.Protocol
+func (ethash *Ethash) Protocol() consensus.Protocol {
+	return consensus.EthProtocol
 }

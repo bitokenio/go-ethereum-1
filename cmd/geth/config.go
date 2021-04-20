@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"reflect"
 	"unicode"
@@ -165,6 +166,9 @@ func checkWhisper(ctx *cli.Context) {
 // makeFullNode loads geth configuration and creates the Ethereum backend.
 func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 	stack, cfg := makeConfigNode(ctx)
+	if ctx.GlobalIsSet(utils.OverrideIstanbulFlag.Name) {
+		cfg.Eth.OverrideIstanbul = new(big.Int).SetUint64(ctx.GlobalUint64(utils.OverrideIstanbulFlag.Name))
+	}
 
 	backend := utils.RegisterEthService(stack, &cfg.Eth)
 
@@ -207,6 +211,24 @@ func dumpConfig(ctx *cli.Context) error {
 	dump.Write(out)
 
 	return nil
+}
+
+// quorumValidateEthService checks quorum features that depend on the ethereum service
+func quorumValidateEthService(stack *node.Node, backend ethapi.Backend) {
+
+	ethBackend, ok := backend.(*eth.EthAPIBackend)
+	if !ok {
+		utils.Fatalf("Ethereum service not running: %v", ok)
+	}
+
+	quorumValidateConsensus(ethBackend.ChainConfig())
+}
+
+// quorumValidateConsensus checks if a consensus was used. The node is killed if consensus was not used
+func quorumValidateConsensus(chainConfig *params.ChainConfig) {
+	if chainConfig.Ethash == nil && chainConfig.Istanbul == nil && chainConfig.Clique == nil {
+		utils.Fatalf("Consensus not specified. Exiting!!")
+	}
 }
 
 func applyMetricConfig(ctx *cli.Context, cfg *gethConfig) {

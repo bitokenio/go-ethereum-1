@@ -71,6 +71,7 @@ var (
 		utils.NoUSBFlag,
 		utils.USBFlag,
 		utils.SmartCardDaemonPathFlag,
+		utils.OverrideIstanbulFlag,
 		utils.EthashCacheDirFlag,
 		utils.EthashCachesInMemoryFlag,
 		utils.EthashCachesOnDiskFlag,
@@ -162,6 +163,10 @@ var (
 		utils.EWASMInterpreterFlag,
 		utils.EVMInterpreterFlag,
 		configFileFlag,
+		//Quorum
+		utils.IstanbulRequestTimeoutFlag,
+		utils.IstanbulBlockPeriodFlag,
+		// End-Quorum
 	}
 
 	rpcFlags = []cli.Flag{
@@ -469,6 +474,9 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend) {
 			utils.Fatalf("Failed to start mining: %v", err)
 		}
 	}
+
+	// checks quorum features that depend on the ethereum service
+	quorumValidateEthService(stack, backend)
 }
 
 // unlockAccounts unlocks any account specifically requested.

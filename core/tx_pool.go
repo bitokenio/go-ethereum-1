@@ -83,6 +83,12 @@ var (
 	// than some meaningful limit a user might use. This is not a consensus error
 	// making the transaction invalid, rather a DOS protection.
 	ErrOversizedData = errors.New("oversized data")
+
+	ErrInvalidGasPrice = errors.New("Gas price not 0")
+
+	// ErrEtherValueUnsupported is returned if a transaction specifies an Ether Value
+	// for a private Quorum transaction.
+	ErrEtherValueUnsupported = errors.New("ether value is not supported for private transactions")
 )
 
 var (
@@ -153,6 +159,9 @@ type TxPoolConfig struct {
 	GlobalQueue  uint64 // Maximum number of non-executable transaction slots for all accounts
 
 	Lifetime time.Duration // Maximum amount of time non-executable transaction are queued
+
+	// Quorum
+	MaxCodeSize uint64 // Maximum size allowed of contract code that can be deployed (in KB)
 }
 
 // DefaultTxPoolConfig contains the default configurations for the transaction
@@ -170,6 +179,9 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	GlobalQueue:  1024,
 
 	Lifetime: 3 * time.Hour,
+
+	// Quorum
+	MaxCodeSize: 24,
 }
 
 // sanitize checks the provided user configurations and changes anything that's
@@ -540,9 +552,21 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if err != nil {
 		return ErrInvalidSender
 	}
-	// Drop non-local transactions under our own minimal accepted gas price
-	if !local && tx.GasPriceIntCmp(pool.gasPrice) < 0 {
-		return ErrUnderpriced
+	if pool.chainconfig.IsQuorum {
+		// Quorum
+		// Gas price must be zero for Quorum transaction
+		if tx.GasPrice().Cmp(common.Big0) != 0 {
+			return ErrInvalidGasPrice
+		}
+		// Ether value is not currently supported on private transactions
+		if tx.IsPrivate() && (len(tx.Data()) == 0 || tx.Value().Sign() != 0) {
+			return ErrEtherValueUnsupported
+		}
+	} else {
+		// Drop non-local transactions under our own minimal accepted gas price
+		if !local && tx.GasPriceIntCmp(pool.gasPrice) < 0 {
+			return ErrUnderpriced
+		}
 	}
 	// Ensure the transaction adheres to nonce ordering
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
@@ -1204,6 +1228,11 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 // future queue to the set of pending transactions. During this process, all
 // invalidated transactions (low nonce, low balance) are deleted.
 func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Transaction {
+	isQuorum := pool.chainconfig.IsQuorum
+	// Init delayed since tx pool could have been started before any state sync
+	if isQuorum && pool.pendingNonces == nil {
+		pool.reset(nil, nil)
+	}
 	// Track the promoted transactions to broadcast them at once
 	var promoted []*types.Transaction
 
@@ -1220,14 +1249,18 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 			pool.all.Remove(hash)
 		}
 		log.Trace("Removed old queued transactions", "count", len(forwards))
-		// Drop all transactions that are too costly (low balance or out of gas)
-		drops, _ := list.Filter(pool.currentState.GetBalance(addr), pool.currentMaxGas)
-		for _, tx := range drops {
-			hash := tx.Hash()
-			pool.all.Remove(hash)
+
+		var drops types.Transactions
+		if !isQuorum {
+			// Drop all transactions that are too costly (low balance or out of gas)
+			drops, _ := list.Filter(pool.currentState.GetBalance(addr), pool.currentMaxGas)
+			for _, tx := range drops {
+				hash := tx.Hash()
+				pool.all.Remove(hash)
+			}
+			log.Trace("Removed unpayable queued transactions", "count", len(drops))
+			queuedNofundsMeter.Mark(int64(len(drops)))
 		}
-		log.Trace("Removed unpayable queued transactions", "count", len(drops))
-		queuedNofundsMeter.Mark(int64(len(drops)))
 
 		// Gather all executable transactions and promote them
 		readies := list.Ready(pool.pendingNonces.get(addr))

@@ -239,6 +239,13 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 		}, debug.DeprecatedFlags...),
 	},
 	{
+		Name: "ISTANBUL",
+		Flags: []cli.Flag{
+			utils.IstanbulRequestTimeoutFlag,
+			utils.IstanbulBlockPeriodFlag,
+		},
+	},
+	{
 		Name: "MISC",
 		Flags: []cli.Flag{
 			utils.SnapshotFlag,

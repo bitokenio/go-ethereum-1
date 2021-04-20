@@ -17,9 +17,14 @@
 package eth
 
 import (
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	istanbulBackend "github.com/ethereum/go-ethereum/consensus/istanbul/backend"
 	"math/big"
 	"sort"
 	"sync"
+	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
@@ -46,7 +51,8 @@ var (
 // Its goal is to get around setting up a valid statedb for the balance and nonce
 // checks.
 type testTxPool struct {
-	pool map[common.Hash]*types.Transaction // Hash map of collected transactions
+	pool  map[common.Hash]*types.Transaction // Hash map of collected transactions
+	added chan<- []*types.Transaction        // Notification channel for new transactions
 
 	txFeed event.Feed   // Notification feed to allow waiting for inclusion
 	lock   sync.RWMutex // Protects the transaction pool
@@ -167,4 +173,133 @@ func newTestHandlerWithBlocks(blocks int) *testHandler {
 func (b *testHandler) close() {
 	b.handler.Stop()
 	b.chain.Stop()
+}
+
+var (
+	testBankKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	testBank       = crypto.PubkeyToAddress(testBankKey.PublicKey)
+)
+
+// Tests that correct consensus mechanism details are returned in NodeInfo.
+func TestNodeInfo(t *testing.T) {
+
+	// Define the tests to be run
+	tests := []struct {
+		consensus      string
+		cliqueConfig   *params.CliqueConfig
+		istanbulConfig *params.IstanbulConfig
+		raftMode       bool
+	}{
+		{"ethash", nil, nil, false},
+		//{"raft", nil, nil, true},
+		{"istanbul", nil, &params.IstanbulConfig{1, 1, big.NewInt(0)}, false},
+		//{"clique", &params.CliqueConfig{1, 1, 0}, nil, false},
+	}
+
+	// Make sure anything we screw up is restored
+	backup := consensus.EthProtocol.Versions
+	defer func() { consensus.EthProtocol.Versions = backup }()
+
+	// Try all available consensus mechanisms and check for errors
+	for i, tt := range tests {
+
+		pm, _, err := newTestProtocolManagerConsensus(tt.consensus, tt.cliqueConfig, tt.istanbulConfig, tt.raftMode)
+
+		if pm != nil {
+			defer pm.Stop()
+		}
+		if err == nil {
+			pmConsensus := getConsensusAlgorithm(pm.engine, pm.raftMode)
+			if tt.consensus != pmConsensus {
+				t.Errorf("test %d: consensus type error, wanted %v but got %v", i, tt.consensus, pmConsensus)
+			}
+		} else {
+			t.Errorf("test %d: consensus type error %v", i, err)
+		}
+	}
+}
+
+// Quorum
+func getConsensusAlgorithm(engine consensus.Engine, raftMode bool) string {
+	var consensusAlgo string
+	if raftMode { // raft does not use consensus interface
+		consensusAlgo = "raft"
+	} else {
+		switch engine.(type) {
+		case consensus.Istanbul:
+			consensusAlgo = "istanbul"
+		case *clique.Clique:
+			consensusAlgo = "clique"
+		case *ethash.Ethash:
+			consensusAlgo = "ethash"
+		default:
+			consensusAlgo = "unknown"
+		}
+	}
+	return consensusAlgo
+}
+
+// newTestProtocolManagerConsensus creates a new protocol manager for testing purposes,
+// that uses the specified consensus mechanism.
+func newTestProtocolManagerConsensus(consensusAlgo string, cliqueConfig *params.CliqueConfig, istanbulConfig *params.IstanbulConfig, raftMode bool) (*handler, ethdb.Database, error) {
+
+	config := params.QuorumTestChainConfig
+	config.Istanbul = istanbulConfig
+
+	var (
+		blocks                  = 0
+		evmux                   = new(event.TypeMux)
+		engine consensus.Engine = ethash.NewFaker()
+		db                      = rawdb.NewMemoryDatabase()
+		gspec                   = &core.Genesis{
+			Config: params.TestChainConfig,
+			Alloc:  core.GenesisAlloc{testBank: {Balance: big.NewInt(1000000)}},
+		}
+		genesis       = gspec.MustCommit(db)
+		blockchain, _ = core.NewBlockChain(db, nil, gspec.Config, engine, vm.Config{}, nil, nil)
+	)
+	chain, _ := core.GenerateChain(gspec.Config, genesis, ethash.NewFaker(), db, blocks, nil)
+	if _, err := blockchain.InsertChain(chain); err != nil {
+		panic(err)
+	}
+
+	switch consensusAlgo {
+	case "raft":
+		engine = ethash.NewFaker() //raft doesn't use engine, but just mirroring what runtime code does
+
+	case "istanbul":
+		var istCfg istanbul.Config
+		config.Istanbul.Epoch = istanbulConfig.Epoch
+		config.Istanbul.ProposerPolicy = istanbulConfig.ProposerPolicy
+
+		nodeKey, _ := crypto.GenerateKey()
+		engine = istanbulBackend.New(&istCfg, nodeKey, db)
+
+	case "clique":
+		engine = clique.New(config.Clique, db)
+
+	default:
+		engine = ethash.NewFaker()
+	}
+
+	pm, err := newHandler(&handlerConfig{
+		Database:   db,
+		Chain:      blockchain,
+		TxPool:     &testTxPool{added: nil},
+		Network:    DefaultConfig.NetworkId,
+		Sync:       downloader.FullSync,
+		BloomCache: uint64(1),
+		EventMux:   evmux,
+		Checkpoint: nil,
+		Whitelist:  nil,
+		RaftMode:   raftMode,
+		Engine:     engine,
+	})
+
+	//pm, err := NewProtocolManager(config, nil, downloader.FullSync, DefaultConfig.NetworkId, evmux, &testTxPool{added: nil}, engine, blockchain, db, 1, nil, raftMode)
+	if err != nil {
+		return nil, nil, err
+	}
+	pm.Start(1000)
+	return pm, db, nil
 }

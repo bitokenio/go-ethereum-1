@@ -2292,6 +2292,11 @@ func (bc *BlockChain) update() {
 	}
 }
 
+// HasBadBlock returns whether the block with the hash is a bad block. dep: Istanbul
+func (bc *BlockChain) HasBadBlock(hash common.Hash) bool {
+	return rawdb.ReadBadBlock(bc.db, hash) != nil
+}
+
 // maintainTxIndex is responsible for the construction and deletion of the
 // transaction index.
 //

@@ -258,3 +258,43 @@ func deriveChainId(v *big.Int) *big.Int {
 	v = new(big.Int).Sub(v, big.NewInt(35))
 	return v.Div(v, big.NewInt(2))
 }
+
+// Quorum
+
+// Signs with Homestead
+// obtains sender from EIP55Signer
+type QuorumPrivateTxSigner struct{ HomesteadSigner }
+
+func (s QuorumPrivateTxSigner) Sender(tx *Transaction) (common.Address, error) {
+	return HomesteadSigner{}.Sender(tx)
+}
+
+// SignatureValues returns signature values. This signature
+// needs to be in the [R || S || V] format where V is 0 or 1.
+func (qs QuorumPrivateTxSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
+	r, s, v, err := HomesteadSigner{}.SignatureValues(tx, sig)
+	// update v for private transaction marker: needs to be 37 (0+37) or 38 (1+37) for a private transaction.
+	v = new(big.Int).SetBytes([]byte{sig[64] + 37})
+	return r, s, v, nil
+}
+
+// Hash returns the hash to be signed by the sender.
+// It does not uniquely identify the transaction.
+func (s QuorumPrivateTxSigner) Hash(tx *Transaction) common.Hash {
+	return s.HomesteadSigner.Hash(tx)
+}
+
+func (s QuorumPrivateTxSigner) Equal(s2 Signer) bool {
+	_, ok := s2.(QuorumPrivateTxSigner)
+	return ok
+}
+
+/*
+ * If v is `37` or `38` that marks the transaction as private in Quorum.
+ * Note: this means quorum chains cannot have a public ethereum chainId == 1, as the EIP155 v
+ * param is `37` and `38` for the public Ethereum chain. Having a private chain with a chainId ==1
+ * is discouraged in the general Ethereum ecosystem.
+ */
+func isPrivate(v *big.Int) bool {
+	return v.Cmp(big.NewInt(37)) == 0 || v.Cmp(big.NewInt(38)) == 0
+}

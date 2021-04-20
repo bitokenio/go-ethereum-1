@@ -20,6 +20,8 @@ package eth
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus/istanbul"
+	istanbulBackend "github.com/ethereum/go-ethereum/consensus/istanbul/backend"
 	"math/big"
 	"runtime"
 	"sync"
@@ -37,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
@@ -121,7 +124,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	chainConfig, genesisHash, genesisErr := core.SetupGenesisBlock(chainDb, config.Genesis)
+	chainConfig, genesisHash, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, config.Genesis, config.OverrideIstanbul)
 	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
 		return nil, genesisErr
 	}
@@ -142,6 +145,10 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		p2pServer:         stack.Server(),
 	}
 
+	// force to set the istanbul etherbase to node key address
+	if chainConfig.Istanbul != nil {
+		eth.etherbase = crypto.PubkeyToAddress(stack.Config().NodeKey().PublicKey)
+	}
 	bcVersion := rawdb.ReadDatabaseVersion(chainDb)
 	var dbVer = "<nil>"
 	if bcVersion != nil {
@@ -208,6 +215,8 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		EventMux:   eth.eventMux,
 		Checkpoint: checkpoint,
 		Whitelist:  config.Whitelist,
+		RaftMode:   config.RaftMode,
+		Engine:     eth.engine,
 	}); err != nil {
 		return nil, err
 	}
@@ -274,6 +283,19 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 	// If proof-of-authority is requested, set it up
 	if chainConfig.Clique != nil {
 		return clique.New(chainConfig.Clique, db)
+	}
+	// If Istanbul is requested, set it up
+	if chainConfig.Istanbul != nil {
+		istanbulConfig := istanbul.Config{
+			ProposerPolicy:         istanbul.ProposerPolicy(chainConfig.Istanbul.ProposerPolicy),
+			Ceil2Nby3Block:         chainConfig.Istanbul.Ceil2Nby3Block,
+			AllowedFutureBlockTime: 1,
+		}
+		if chainConfig.Istanbul.Epoch != 0 {
+			istanbulConfig.Epoch = chainConfig.Istanbul.Epoch
+		}
+
+		return istanbulBackend.New(&istanbulConfig, stack.Config().NodeKey(), db)
 	}
 	// Otherwise assume proof-of-work
 	switch config.PowMode {
@@ -442,6 +464,10 @@ func (s *Ethereum) shouldPreserve(block *types.Block) bool {
 
 // SetEtherbase sets the mining reward address.
 func (s *Ethereum) SetEtherbase(etherbase common.Address) {
+	if _, ok := s.engine.(consensus.Istanbul); ok {
+		log.Error("Cannot set etherbase in Istanbul consensus")
+		return
+	}
 	s.lock.Lock()
 	s.etherbase = etherbase
 	s.lock.Unlock()

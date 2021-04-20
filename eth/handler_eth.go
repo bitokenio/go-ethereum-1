@@ -19,6 +19,7 @@ package eth
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus"
 	"math/big"
 	"sync/atomic"
 	"time"
@@ -37,6 +38,8 @@ import (
 type ethHandler handler
 
 func (h *ethHandler) Chain() *core.BlockChain     { return h.chain }
+func (h *ethHandler) Engine() consensus.Engine    { return h.engine }
+func (h *ethHandler) RaftMode() bool              { return h.RaftMode() }
 func (h *ethHandler) StateBloom() *trie.SyncBloom { return h.stateBloom }
 func (h *ethHandler) TxPool() eth.TxPool          { return h.txpool }
 
