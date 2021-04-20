@@ -226,7 +226,7 @@ func quorumValidateEthService(stack *node.Node, backend ethapi.Backend) {
 
 // quorumValidateConsensus checks if a consensus was used. The node is killed if consensus was not used
 func quorumValidateConsensus(chainConfig *params.ChainConfig) {
-	if chainConfig.Istanbul == nil {
+	if chainConfig.Ethash == nil && chainConfig.Istanbul == nil && chainConfig.Clique == nil {
 		utils.Fatalf("Consensus not specified. Exiting!!")
 	}
 }

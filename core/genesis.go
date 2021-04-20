@@ -176,8 +176,6 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override
 			return genesis.Config, common.Hash{}, err
 		}
 
-		// /Quorum
-
 		block, err := genesis.Commit(db)
 		if err != nil {
 			return genesis.Config, common.Hash{}, err
